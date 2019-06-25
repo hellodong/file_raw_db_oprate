@@ -8,7 +8,6 @@
 #include <stdbool.h>
 
 
-#define DEV_DATA_SIZE		(256)
 
 typedef struct Ext_Addr{
 	uint32_t l;
@@ -70,6 +69,14 @@ typedef struct Plain_Dev{
 	uint32_t lastTime;      // 上线时间
 
 }stPlainDev_t;
+
+
+int nxpDevDbLoad(const char baseDbPathStr[], const char plainDbPathStr[]);
+
+int oriDevsList(void);
+
+int newDevsList(void);
+
 
 
 #endif
