@@ -73,9 +73,15 @@ typedef struct Plain_Dev{
 
 int nxpDevDbLoad(const char baseDbPathStr[], const char plainDbPathStr[]);
 
+int nxpDevsCopy(void);
+
 int oriDevsList(void);
 
 int newDevsList(void);
+
+int newDbDevAdd(uint32_t addrH_u32, uint32_t addrL_u32);
+
+int newDbDevMod(uint16_t shortAddr, uint32_t addrH_u32, uint32_t addrL_u32);
 
 
 

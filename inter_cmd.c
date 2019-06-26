@@ -28,7 +28,7 @@ static void help_cmd_process(int argc, char *argv[]);
 
 
 static stCmdCtx_t gCmdArray[] = {
-	{"add", add_cmd_process,"add <short addr> <mac>"},
+	{"add", add_cmd_process,"add <mac> <short addr> "},
 	{"list",list_cmd_process , "list 0/1"},
 	{"help",help_cmd_process ,"help"},
 };
@@ -54,22 +54,31 @@ int cmd_handler(int argc, char *argv[])
 
 static void add_cmd_process(int argc, char *argv[])
 {
+	if (argc < 1){
+		LOG("No Enough Args(%d).\r\n", argc);
+		return ;
+	}
+	uint16_t shortAddr;
 	char addrH[16];
 	char addrL[16];
 	uint32_t addrH_u32;
 	uint32_t addrL_u32;
-	
-	if (argc < 2){
-		LOG("No Enough Args(%d).\r\n", argc);
-		return ;
-	}
-	memcpy(addrH, &argv[1][0], 8);
-	memcpy(addrL, &argv[1][8], 8);
+	memcpy(addrH, &argv[0][0], 8);
+	memcpy(addrL, &argv[0][8], 8);
 	addrH[8] = '\0';
 	addrL[8] = '\0';
 	addrH_u32= strtol(addrH, NULL, 16);
 	addrL_u32 = strtol (addrL, NULL, 16);
-	LOG("%08x%08x\r\n", addrH_u32, addrL_u32);
+
+	if (argc > 1){//modify device info
+		shortAddr = atoi(argv[1]);
+
+		LOG("Short Addr:%x, MAC:%08x%08x\r\n", shortAddr, addrH_u32, addrL_u32);
+		newDbDevMod(shortAddr, addrH_u32, addrL_u32);
+	}else{//add device info
+		LOG("MAC:%08x%08x\r\n", addrH_u32, addrL_u32);
+		newDbDevAdd(addrH_u32, addrL_u32);
+	}
 }
 
 static void list_cmd_process(int argc, char *argv[])

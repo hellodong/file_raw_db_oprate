@@ -24,18 +24,35 @@
 #define DEV_DATA_SIZE		(256)
 #define DB_MAX_DEVS			(32)
 
+
 typedef struct
 {
 	int oriBaseDbfd;
 	int oriPlainDbfd;
+	uint16_t oriDbSize;
 	int newBaseDbfd;
 	int newPlainDbfd;
+	uint16_t newDbSize;
 }stDbCtx_t;
 
 
 static stDbCtx_t gCtx;
 
+const static stBaseDev_t gDefaultBaseDevInfo={
+	.valid = true,
+	.associated = true,
+	.reported = false,
+};
 
+const static stPlainDev_t gDefaultPlainDevInfo={
+	.valid = 1,
+	.reported = 1,
+	.crypt_type = 0,
+	.model = U16SWAP(0x0013),
+};
+
+
+#if 0
 static void view_data(const char str[], uint8_t data[], uint16_t dataLen)
 {
 	printf("%s(%04d):", str, dataLen);
@@ -48,18 +65,21 @@ static void view_data(const char str[], uint8_t data[], uint16_t dataLen)
 	}   
 	printf("\r\n");
 }
+#endif
 
 static int baseInfoPrint(stBaseDev_t *dev)
 {
 	if (!dev->ext_addr_h) {
-	    return 1;
+		return 1;
 	} 
 
-	view_data("hex", (uint8_t *)dev, sizeof(*dev));
+	//view_data("hex", (uint8_t *)dev, sizeof(*dev));
 	LOG("ShortAddr:%04x, IeeeAddr:%08x%08x\r\n", U16SWAP(dev->short_addr), U32SWAP(dev->ext_addr_h), U32SWAP(dev->ext_addr_l));
-	LOG("    valid:%d, associated:%d, associated time:%d\r\n", dev->valid, dev->associated, dev->associated_time);
-	LOG("    paired:%d, securitied:%d\r\n", dev->paired, dev->security_enabled);
-	
+	LOG("    valid:%d, associated:%d, reported:%d\r\n", dev->valid, dev->associated, dev->reported);
+	if (dev->reported == 1){
+		LOG("    associated time:%d paired:%d, securitied:%d\r\n",dev->associated_time ,dev->paired, dev->security_enabled);
+	}
+
 	return 0;
 }
 
@@ -68,10 +88,31 @@ static void plainInfoPrint(stPlainDev_t *dev)
 	LOG("Plain Device.\r\n");
 
 	LOG("ShortAddr:%04x, IeeeAddr:%02x%02x%02x%02x%02x%02x%02x%02x\r\n", U16SWAP(dev->shortaddr),dev->mac[0], dev->mac[1], dev->mac[2], dev->mac[3], dev->mac[4], dev->mac[5], dev->mac[6], dev->mac[7]);
-	LOG("    valid:%d, associated:%d\r\n", dev->valid, dev->associated);
-	LOG("    reported:%d, devType:%d\r\n", dev->reported, dev->devType);
-	LOG("    model:0x%x sw:0x%x, hw:0x%x\r\n", dev->model, dev->swVer, dev->hwVer);
+	LOG("    valid:%d, reported:%d, \r\n", dev->valid, dev->reported);
+	if (1 == dev->reported){
+		LOG("    model:0x%x sw:0x%x, hw:0x%x\r\n", dev->model, dev->swVer, dev->hwVer);
+		LOG("    associated:%d, devType:%d\r\n", dev->associated, dev->devType);
+	}
 }
+
+static int  devInfo_write(int dbfd, uint16_t idx, uint8_t buf[], uint16_t bufSize)
+{
+	size_t writeLen;
+	lseek(dbfd, idx * bufSize, SEEK_SET);
+	writeLen = write(dbfd, buf, bufSize);
+	sync();
+	return writeLen;
+}
+
+static int devInfo_read(int dbfd, uint16_t idx, uint8_t buf[], uint16_t bufSize)
+{
+	size_t readLen;
+
+	lseek(dbfd, idx * bufSize, SEEK_SET);
+	readLen = read(dbfd, buf, bufSize);
+	return readLen;
+}
+
 
 static int devsInfo_list(int basefd, int plainfd)
 {
@@ -100,30 +141,21 @@ static int devsInfo_list(int basefd, int plainfd)
 	LOG("read index:%d\r\n", i);
 }
 
-
-#if 0
-static void basedev_write(int writefd, uint32_t addrH, uint32_t addL, uint16_t idx)
+static void basedevInf_cfg(uint8_t buf[], uint16_t idx, uint32_t addrH, uint32_t addL)
 {
-	uint32_t buf[DEV_DATA_SIZE];
 	stBaseDev_t *devPtr = (stBaseDev_t *)buf;
-	memcpy(buf, gCtx.baseDevBin, DEV_DATA_SIZE);
+
+	devPtr->short_addr = U16SWAP(idx);
 	devPtr->ext_addr_l = U32SWAP(addL);
 	devPtr->ext_addr_h = U32SWAP(addrH);
-	devPtr->short_addr = U16SWAP(idx);
-	
-	lseek(writefd, idx * DEV_DATA_SIZE, SEEK_SET);
-	write(writefd, buf, sizeof(buf));
-	sync();
 }
 
-
-
-static void plaindev_write(int writefd, uint32_t addrH, uint32_t addL, uint16_t idx)
+static void plaindevInf_cfg(uint16_t idx, uint8_t buf[], uint32_t addrH, uint32_t addL)
 {
-	uint32_t buf[DEV_DATA_SIZE];
 	stPlainDev_t*devPtr = (stPlainDev_t *)buf;
-	memcpy(buf, gCtx.plainDevBin, DEV_DATA_SIZE);
+
 	devPtr->shortaddr = U16SWAP(idx);
+
 	devPtr->mac[0] = (addrH >> 24) & 0xff;
 	devPtr->mac[1] = (addrH >> 16) & 0xff;
 	devPtr->mac[2] = (addrH >> 8) & 0xff;
@@ -134,59 +166,65 @@ static void plaindev_write(int writefd, uint32_t addrH, uint32_t addL, uint16_t 
 	devPtr->mac[6] = (addL >> 8) & 0xff;
 	devPtr->mac[7] = (addL) & 0xff;
 
-	devPtr->crypt_type = 0;
-	devPtr->reported = 1;
-	
-	lseek(writefd, idx * DEV_DATA_SIZE, SEEK_SET);
-	write(writefd, buf, sizeof(buf));
-	sync();
+	//devPtr->valid = true;
+	//devPtr->reported = true;
+	//devPtr->crypt_type = 0;
 }
 
-
-static void write_addrInfo(uint32_t addrH, uint32_t addrL)
+int nxpDevsCopy(void)
 {
-	uint8_t tmp = 0;
-	int basefd = open(BASE_DEV_PATH, O_RDWR);
-	if (basefd < 0){
-		LOG("Create %s\r\n", BASE_DEV_PATH);
-		basefd = open(BASE_DEV_PATH, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-		//lseek(basefd, 20*DEV_DATA_SIZE - 1, SEEK_SET);
-		write(basefd, &tmp, 1);
-		close(basefd);
-		basefd = open(BASE_DEV_PATH, O_RDWR);
-	}
+	uint8_t buf[DEV_DATA_SIZE];
+	int idx, ret;
+	uint16_t baseDevSize, plainDevSize;
 
-	int plainfd = open(PLAIN_DEV_PATH, O_RDWR);
-	if (plainfd < 0) {
-		uint8_t tmp = 0;
-		LOG("Create %s\r\n",PLAIN_DEV_PATH );
-		plainfd = open(PLAIN_DEV_PATH , O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-		//lseek(plainfd, 20*DEV_DATA_SIZE - 1, SEEK_SET);
-		write(plainfd, &tmp, 1);
-		close(plainfd);
-		plainfd = open(PLAIN_DEV_PATH, O_RDWR);
+	/* Base Devs DB Copy */
+	for (idx = 0;idx < DB_MAX_DEVS;idx++){
+		if (devInfo_read(gCtx.oriBaseDbfd, idx, buf, DEV_DATA_SIZE) != DEV_DATA_SIZE){
+			LOG("Read Index:%d\r\n", idx);
+			break;
+		}
+		devInfo_write(gCtx.newBaseDbfd, idx, buf, DEV_DATA_SIZE);
 	}
-	basedev_write(basefd, addrH, addrL, gCtx.index);
-	plaindev_write(plainfd, addrH, addrL, gCtx.index);
-	LOG("Done:%d\r\n", gCtx.index);
-	gCtx.index++;
+	baseDevSize = idx;
+
+	/* Plain Devs DB Copy */
+	for (idx = 0;idx < DB_MAX_DEVS;idx++){
+		if (devInfo_read(gCtx.oriPlainDbfd, idx, buf, DEV_DATA_SIZE) != DEV_DATA_SIZE){
+			LOG("Read Index:%d\r\n", idx);
+			break;
+		}
+		devInfo_write(gCtx.newPlainDbfd, idx, buf, DEV_DATA_SIZE);
+	}
+	plainDevSize = idx;
+	LOG("Origin Base Dev Size:%d, Origin Plain Dev Size:%d\r\n", baseDevSize, plainDevSize);
+	gCtx.oriDbSize = baseDevSize;
+	gCtx.newDbSize = baseDevSize;
+	return 0;
 }
-#endif
 
 int nxpDevDbLoad(const char baseDbPathStr[], const char plainDbPathStr[])
 {
 	int oriBaseDbfd, oriPlainDbfd, newBaseDbfd, newPlainDbfd;
 
-	oriBaseDbfd = open(baseDbPathStr, O_RDONLY);
-	if (oriBaseDbfd < 0){
-		LOG("Open Origin Base DB(%s) Error.\r\n", baseDbPathStr);
-		return 1;
+	if (NULL != baseDbPathStr){
+		oriBaseDbfd = open(baseDbPathStr, O_RDONLY);
+		if (oriBaseDbfd < 0){
+			LOG("Open Origin Base DB(%s) Error.\r\n", baseDbPathStr);
+			return 1;
+		}
+		LOG("Opened Origin Base DB.\r\n");
 	}
-	oriPlainDbfd = open(plainDbPathStr, O_RDONLY);
-	if (oriPlainDbfd < 0){
-		LOG("Open Origin Plain DB(%s) Error.\r\n", plainDbPathStr);
-		close(oriBaseDbfd);
-		return 1;
+
+	if (NULL != plainDbPathStr){
+		oriPlainDbfd = open(plainDbPathStr, O_RDONLY);
+		if (oriPlainDbfd < 0){
+			LOG("Open Origin Plain DB(%s) Error.\r\n", plainDbPathStr);
+			if (oriBaseDbfd > 0){
+				close(oriBaseDbfd);
+			}
+			return 1;
+		}
+		LOG("Opened Origin Plain DB.\r\n");
 	}
 
 	newBaseDbfd = open(BASE_DEV_PATH, O_RDWR);
@@ -195,31 +233,41 @@ int nxpDevDbLoad(const char baseDbPathStr[], const char plainDbPathStr[])
 		newBaseDbfd = open(BASE_DEV_PATH, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
 		if (newBaseDbfd < 0){
 			LOG("Create New Base Error\r\n");
-			close(oriBaseDbfd);
-			close(oriPlainDbfd);
+			if (oriBaseDbfd > 0){
+				close(oriBaseDbfd);
+			}
+			if (oriPlainDbfd > 0){
+				close(oriPlainDbfd);
+			}
 			return 1;
 		}
 	}
 	newPlainDbfd = open(PLAIN_DEV_PATH, O_RDWR);
-	if (newBaseDbfd < 0)
-	{
+	if (newPlainDbfd < 0) {
 		LOG("Create New Plain DB(%s)\r\n", PLAIN_DEV_PATH);
 		newPlainDbfd = open(PLAIN_DEV_PATH, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
 		if (newPlainDbfd < 0) {
 			LOG("Create New Plain DB Error\r\n");
-			close(oriBaseDbfd);
-			close(oriPlainDbfd);
+			if (oriBaseDbfd > 0){
+				close(oriBaseDbfd);
+			}
+			if (oriPlainDbfd > 0){
+				close(oriPlainDbfd);
+			}
 			close(newBaseDbfd);
 			return 1;
 		}
 	}
-	gCtx.oriBaseDbfd = oriBaseDbfd;
-	gCtx.oriPlainDbfd = oriPlainDbfd;
+	if (NULL != baseDbPathStr){
+		gCtx.oriBaseDbfd = oriBaseDbfd;
+	}
+	if (NULL != plainDbPathStr){
+		gCtx.oriPlainDbfd = oriPlainDbfd;
+	}
 	gCtx.newBaseDbfd = newBaseDbfd;
 	gCtx.newPlainDbfd = newPlainDbfd;
 	return 0;
 }
-
 
 int oriDevsList(void)
 {
@@ -240,5 +288,43 @@ int newDevsList(void)
 	devsInfo_list(gCtx.newBaseDbfd, gCtx.newPlainDbfd);
 	return 0;
 }
+
+int newDbDevAdd(uint32_t addrH_u32, uint32_t addrL_u32)
+{
+	uint16_t shortAddr;
+	uint8_t buf[DEV_DATA_SIZE];
+
+	shortAddr = gCtx.newDbSize;
+
+	memset(buf, 0x00, sizeof(buf));
+	memcpy(buf, &gDefaultBaseDevInfo, sizeof(gDefaultBaseDevInfo));
+	basedevInf_cfg(buf, shortAddr, addrH_u32, addrL_u32);
+	devInfo_write(gCtx.newBaseDbfd, shortAddr, buf, sizeof(buf));
+
+	memset(buf, 0x00, sizeof(buf));
+	memcpy(buf, &gDefaultPlainDevInfo, sizeof(gDefaultPlainDevInfo));
+	plaindevInf_cfg(shortAddr, buf, addrH_u32, addrL_u32);
+	devInfo_write(gCtx.newPlainDbfd, shortAddr, buf, sizeof(buf));
+
+	gCtx.newDbSize++;
+
+	return 0;
+}
+
+int newDbDevMod(uint16_t shortAddr, uint32_t addrH_u32, uint32_t addrL_u32)
+{
+	uint8_t buf[DEV_DATA_SIZE];
+
+	memset(buf, 0x00, sizeof(buf));
+	basedevInf_cfg(buf, shortAddr, addrH_u32, addrL_u32);
+	devInfo_write(gCtx.newBaseDbfd, shortAddr, buf, sizeof(buf));
+
+	memset(buf, 0x00, sizeof(buf));
+	plaindevInf_cfg(shortAddr, buf, addrH_u32, addrL_u32);
+	devInfo_write(gCtx.newPlainDbfd, shortAddr, buf, sizeof(buf));
+
+	return 0;
+}
+
 
 
