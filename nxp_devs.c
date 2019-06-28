@@ -189,16 +189,21 @@ int nxpDevsCopy(void)
 
 	/* Plain Devs DB Copy */
 	for (idx = 0;idx < DB_MAX_DEVS;idx++){
-		if (devInfo_read(gCtx.oriPlainDbfd, idx, buf, DEV_DATA_SIZE) != DEV_DATA_SIZE){
-			LOG("Read Index:%d\r\n", idx);
+		ret = devInfo_read(gCtx.oriPlainDbfd, idx, buf, DEV_DATA_SIZE);
+		if (ret < DEV_DATA_SIZE && ret > 0){
+			idx++;
+			LOG("Read length(%d).\r\n", ret);
+			break;
+		}else if (ret <= 0){
+			LOG("Read error(%d).\r\n", ret);
 			break;
 		}
 		devInfo_write(gCtx.newPlainDbfd, idx, buf, DEV_DATA_SIZE);
 	}
 	plainDevSize = idx;
 	LOG("Origin Base Dev Size:%d, Origin Plain Dev Size:%d\r\n", baseDevSize, plainDevSize);
-	gCtx.oriDbSize = baseDevSize;
-	gCtx.newDbSize = baseDevSize;
+	gCtx.oriDbSize = plainDevSize;
+	gCtx.newDbSize = plainDevSize;
 	return 0;
 }
 
