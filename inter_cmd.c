@@ -87,7 +87,7 @@ static void list_cmd_process(int argc, char *argv[])
 		LOG("No Enough Args(%d).\r\n", argc);
 		return ;
 	}
-	int listflag;
+	int listflag = 1;
 	listflag = atoi(argv[0]);
 	LOG("%d\r\n", listflag);
 	switch (listflag){
@@ -99,6 +99,7 @@ static void list_cmd_process(int argc, char *argv[])
 			break;
 		default:
 			LOG("Error Argument.\r\n");
+			break;
 	}
 }
 

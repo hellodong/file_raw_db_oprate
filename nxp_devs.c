@@ -48,7 +48,7 @@ const static stPlainDev_t gDefaultPlainDevInfo={
 	.valid = 1,
 	.reported = 1,
 	.crypt_type = 0,
-	.model = U16SWAP(0x0013),
+	.model = 0x0013,
 };
 
 
@@ -308,6 +308,9 @@ int newDbDevAdd(uint32_t addrH_u32, uint32_t addrL_u32)
 
 	gCtx.newDbSize++;
 
+	LOG("Add New Device:%08x%08x\r\n", addrH_u32, addrL_u32);
+	LOG("DB Size:%d\r\n", gCtx.newDbSize);
+
 	return 0;
 }
 
@@ -316,12 +319,17 @@ int newDbDevMod(uint16_t shortAddr, uint32_t addrH_u32, uint32_t addrL_u32)
 	uint8_t buf[DEV_DATA_SIZE];
 
 	memset(buf, 0x00, sizeof(buf));
+	memcpy(buf, &gDefaultBaseDevInfo, sizeof(gDefaultBaseDevInfo));
 	basedevInf_cfg(buf, shortAddr, addrH_u32, addrL_u32);
 	devInfo_write(gCtx.newBaseDbfd, shortAddr, buf, sizeof(buf));
 
 	memset(buf, 0x00, sizeof(buf));
+	memcpy(buf, &gDefaultPlainDevInfo, sizeof(gDefaultPlainDevInfo));
 	plaindevInf_cfg(shortAddr, buf, addrH_u32, addrL_u32);
 	devInfo_write(gCtx.newPlainDbfd, shortAddr, buf, sizeof(buf));
+
+	LOG("Modify Device:%08x%08x\r\n", addrH_u32, addrL_u32);
+	LOG("DB Size:%d\r\n", gCtx.newDbSize);
 
 	return 0;
 }
